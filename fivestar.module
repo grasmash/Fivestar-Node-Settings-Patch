@@ -70,6 +70,10 @@ function fivestar_init() {
   if (module_exists('content')) {
     module_load_include('inc', 'fivestar', 'fivestar_field');
   }
+  
+  if(module_exists('rules')) {
+    module_load_include('inc', 'fivestar', 'fivestar_rules');
+  }
 
   // Add necessary CSS and JS.
   // TODO: These shouldn't be loaded on every page, but block caching omits
@@ -935,18 +939,18 @@ function fivestar_node_disabled(&$node) {
   }
 }
 
-function fivestar_node_save(&$node, $fivestar, $update = array()) {
-  if (isset($fivestar['disable'])) {
-    if ($fivestar['disable'] === 1){
+//update fivestar_node table to specify nodes for which the fivestar widget is disabled
+function fivestar_node_save(&$node, $disable = NULL) {
+  $fivestar = $node->fivestar;
+  if (isset($fivestar['disable']) || !is_null($disable)) {
+    if (($fivestar['disable'] === 1 || (bool)$disable == TRUE) && fivestar_node_disabled($node) === 0){
+    //condition requires some double checking to see if rules/cck/or fivestar(content-type) are conflicting
     	db_query('INSERT INTO {fivestar_node} (nid) VALUES (%d)', $node->nid);
-		//$node_fivestar['nid'] = $node->nid;
-		//$result = drupal_write_record('fivestar_node', $node_fivestar, $update);
-	}
-	else {
-		db_query('DELETE FROM {fivestar_node} WHERE nid = %d', $node->nid);
-	}
+	  }
+    elseif(($fivestar['disable'] === 0 || (bool)$disable == FALSE) && fivestar_node_disabled($node) === 1) {
+      db_query('DELETE FROM {fivestar_node} WHERE nid = %d', $node->nid);
+    }
   }
-
 }
 
 function fivestar_node_delete($node) {
@@ -962,13 +966,13 @@ function fivestar_nodeapi(&$node, $op, $teaser, $page) {
   switch ($op) {
     case 'insert':
       if (!empty($node->fivestar)) {
-        fivestar_node_save($node, $node->fivestar);
+        fivestar_node_save($node);
       }
       break;
 
     case 'update':
       if (!empty($node->fivestar)) {
-        fivestar_node_save($node, $node->fivestar, 'nid');
+        fivestar_node_save($node);
       }
       break;
 
@@ -1364,9 +1368,11 @@ function fivestar_form_submit($form, &$form_state) {
     // Set a message that the vote was received.
     if ($form_state['values']['vote'] === '0') {
       drupal_set_message(t('Your vote has been cleared.'));
+      if(module_exists('rules'))rules_invoke_event('fivestar_node_vote_cleared', $form_state['values']['content_id']);  //invoke 'fivestar_node_vote_cleared' rules event
     }
     elseif (is_numeric($form_state['values']['vote'])) {
       drupal_set_message(t('Thank you for your vote.'));
+      if(module_exists('rules'))rules_invoke_event('fivestar_node_vote_cast', $form_state['values']['content_id']);  //invoke 'fivestar_node_vote_cast' rules event
     }
     // Regenerate the page with a drupal_goto() to update the current values.
     drupal_goto();
